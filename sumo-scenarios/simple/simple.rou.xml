@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes>
+    <vType id="car" accel="2.6" decel="4.5" sigma="0.5"
+           length="5" minGap="2.5" maxSpeed="13.9"/>
+
+    <route id="ns" edges="north_to_center center_to_south"/>
+    <route id="sn" edges="south_to_center center_to_north"/>
+    <route id="ew" edges="east_to_center  center_to_west"/>
+    <route id="we" edges="west_to_center  center_to_east"/>
+
+    <vehicle id="veh0" type="car" route="ns" depart="0"/>
+    <vehicle id="veh1" type="car" route="sn" depart="2"/>
+    <vehicle id="veh2" type="car" route="ew" depart="4"/>
+    <vehicle id="veh3" type="car" route="we" depart="6"/>
+    <vehicle id="veh4" type="car" route="ns" depart="8"/>
+    <vehicle id="veh5" type="car" route="sn" depart="10"/>
+    <vehicle id="veh6" type="car" route="ew" depart="12"/>
+    <vehicle id="veh7" type="car" route="we" depart="14"/>
+    <vehicle id="veh8" type="car" route="ns" depart="16"/>
+    <vehicle id="veh9" type="car" route="sn" depart="18"/>
+</routes>
