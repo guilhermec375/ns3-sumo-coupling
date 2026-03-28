@@ -1,29 +1,29 @@
 # ns3-sumo-coupling
-A minimal ns-3 contrib module for bidirectional SUMO co-simulation via TraCI. 
 
-Compatible with ns-3.47 and SUMO 1.26. Requires no SUMO source dependencies. 
+A radically minimalist, zero-dependency `ns-3` contrib module for bidirectional co-simulation with SUMO via TraCI. 
 
-Please note that this module is intended as a proof-of-concept and educational toy project, rather than a production-ready solution. 
+Designed with simplicity at its core, this project demonstrates that robust coupling can be achieved with a remarkably small codebase. It eschews complex middleware and avoids any SUMO source dependencies, making it highly accessible for study, education, and rapid experimentation.
 
-The entire integration is achieved with a remarkably small codebase, making it highly accessible for study and experimentation.
+**Compatibility:** The module is broadly compatible with older versions of both simulators (such as SUMO 1.8 and earlier ns-3 releases). It has been thoroughly tested and validated on **ns-3.47** and **SUMO 1.26**.
+
+*Disclaimer: This module is intended as an educational toy project and a foundation for study, rather than a production-ready solution.*
 
 ## Architecture Overview
-Please note that this module is intended as a proof-of-concept and educational toy project, rather than a production-ready solution.
 
-This module establishes a deterministic, leader-follower synchronization between the ns-3 network layer and the SUMO mobility layer. ns-3 acts as the TraCI client, dictating the simulation time steps.
+`ns-3` acts as a lightweight TraCI client, establishing a deterministic, leader-follower synchronization with SUMO.
 
-* **Synchronization:** ns-3 commands SUMO to advance by `dt`, ensuring time alignment between both simulators.
-* **Static Node Pool:** Since ns-3 requires nodes to be instantiated prior to simulation, the module utilizes a pre-allocated pool of ns-3 nodes. These are dynamically mapped to active SUMO vehicles. Inactive nodes are parked at out-of-bounds coordinates.
-* **Automated Mobility Updates:** SUMO vehicle positions and speeds are retrieved at each step and applied to the corresponding ns-3 `MobilityModel`. This natively supports standard ns-3 radio propagation models without additional configuration.
-* **Bidirectional Control:** User-defined callbacks allow ns-3 applications to issue commands back to SUMO, such as dynamic speed alterations based on network events.
+* **Strict Synchronization:** `ns-3` commands SUMO to advance by a fixed time step (`dt`).
+* **Static Node Pool:** A pre-allocated pool of `ns-3` nodes is dynamically mapped to active SUMO vehicles. Inactive nodes are parked out-of-bounds to prevent radio interference.
+* **Automated Mobility:** Vehicle states are retrieved at each step and applied to the corresponding `ns-3` `MobilityModel`, seamlessly integrating with standard radio propagation models.
+* **Bidirectional Control:** User-defined callbacks enable `ns-3` applications to issue commands back to SUMO with minimal overhead.
 
 ## Installation
 
-Clone the repository into the `contrib/` directory of your ns-3 installation and reconfigure the build system.
+Clone the repository into the `contrib/` directory of your `ns-3` installation and reconfigure the build system:
 
-```
+```bash
 cd <ns3-root>/contrib
-git clone https://github.com/Balzakrez/ns3-sumo-coupling
+git clone [https://github.com/Balzakrez/ns3-sumo-coupling](https://github.com/Balzakrez/ns3-sumo-coupling)
 cd ..
 ./ns3 configure
 ./ns3 build
@@ -31,30 +31,34 @@ cd ..
 
 ## Quick Start
 
+Below is a minimal example demonstrating how to initialize the coupling within an `ns-3` simulation script.
+
 ```cpp
-// Initialize a node pool sized for the peak number of simultaneous vehicles
+// 1. Initialize a node pool sized for the peak number of simultaneous vehicles
 NodeContainer pool;
 pool.Create(20);
+
 MobilityHelper mob;
 mob.SetMobilityModel("ns3::ConstantPositionMobilityModel");
 mob.Install(pool);
 
-// Configure the SumoManager application
+// 2. Configure the SumoManager application
 auto sumoManager = CreateObject<SumoManager>();
 sumoManager->SetAttribute("Host", StringValue("127.0.0.1"));
 sumoManager->SetAttribute("Port", IntegerValue(1337));
 sumoManager->SetAttribute("StepSize", DoubleValue(0.1));
 sumoManager->SetNodePool(pool);
 
-// Define a bidirectional callback (optional)
+// 3. Define a bidirectional callback (optional)
 sumoManager->SetVehicleCallback(
     [&](double t, const std::string& vid, const VehicleState& s) {
+        // Example: limit vehicle speed if it exceeds 10 m/s
         if (s.speed > 10.0) {
             sumoManager->GetClient().SetVehicleSpeed(vid, 5.0);
         }
     });
 
-// Attach to a host node and schedule
+// 4. Attach to a host node and schedule
 auto host = CreateObject<Node>();
 host->AddApplication(sumoManager);
 sumoManager->SetStartTime(Seconds(0.0));
@@ -66,28 +70,31 @@ Simulator::Destroy();
 
 ## Validation Example
 
-The included `simple-vanet` scenario validates position updates, coordinate bounds, average speed, and bidirectional commands.
+The repository includes a `simple-vanet` scenario that validates position updates, coordinate bounding, average speed measurements, and bidirectional commands.
 
-**Option A: Manual SUMO Execution**
+### Option A: Manual SUMO Execution
+
+**Terminal 1 (Start SUMO):**
 ```bash
-# Terminal 1: Start SUMO
 sumo -c contrib/sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
+```
 
-# Terminal 2: Run ns-3
+**Terminal 2 (Run ns-3):**
+```bash
 ./ns3 build sumo-coupling && NS_LOG=SumoManager=info ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300
 ```
 
-**Option B: Automated Execution**
+### Option B: Automated Execution
+
 ```bash
-./ns3 build sumo-coupling && NS_LOG=SumoManager=info ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --simTime=60 --sumoConfig=contrib/sumo-coupling/sumo-scenarios/simple/simple.sumocfg
+./ns3 build sumo-coupling && NS_LOG=SumoManager=info ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/sumo-coupling/sumo-scenarios/simple/simple.sumocfg
 ```
 
 ## Limitations
 
-* **Polling Overhead:** TraCI subscriptions are currently unimplemented. Position and speed are polled back-to-back sequentially per step.
-* **Single Client:** `CMD_SETORDER` is unsupported.
-* **2D Coordinate System:** The Z coordinate is fixed to 0.
+* **Polling Overhead:** TraCI subscriptions are currently unimplemented. Position and speed are polled sequentially per step for each vehicle.
+* **Single Client:** The `CMD_SETORDER` TraCI command is currently unsupported.
 
 ## License
 
-MIT License
+This project is distributed under the MIT License.
