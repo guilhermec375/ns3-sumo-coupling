@@ -68,7 +68,7 @@ double SumoClient::GetDouble(const std::vector<uint8_t>& b, size_t& pos) {
 }
 
 std::string SumoClient::GetString(const std::vector<uint8_t>& b, size_t& pos) {
-    int32_t len = GetInt32(b, pos); // may throw
+    int32_t len = GetInt32(b, pos);
     if (len < 0)
         throw std::out_of_range("TraCI: negative string length");
     if (pos + static_cast<size_t>(len) > b.size())
@@ -185,7 +185,7 @@ std::vector<SumoClient::TraCICmd> SumoClient::ParseCommands(const std::vector<ui
 }
 
 // *******************************************************************************************************************
-// Public API.
+// Public API — connection.
 
 bool SumoClient::Connect(const std::string& host, int port) {
     m_socket = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -227,6 +227,9 @@ void SumoClient::Close() {
     }
 }
 
+// *******************************************************************************************************************
+// Simulation control.
+
 bool SumoClient::SimStep(double targetTime) {
     std::vector<uint8_t> payload;
     PutDouble(payload, targetTime);
@@ -241,7 +244,7 @@ bool SumoClient::SimStep(double targetTime) {
 }
 
 // *******************************************************************************************************************
-// Private helper shared by GetVehicleIds / GetDepartedVehicleIds / GetArrivedVehicleIds.
+// Shared helpers.
 
 std::vector<std::string> SumoClient::GetStringListVar(uint8_t domain, uint8_t respId, uint8_t varId) {
     std::vector<uint8_t> payload{ varId };
@@ -271,6 +274,63 @@ std::vector<std::string> SumoClient::GetStringListVar(uint8_t domain, uint8_t re
     return {};
 }
 
+/**
+ * @brief Generic GET for a variable that returns a single double.
+ *        Sends one request and reads one response.
+ */
+double SumoClient::GetDoubleVar(uint8_t varId, const std::string& vehicleId) {
+    std::vector<uint8_t> payload{ varId };
+    PutString(payload, vehicleId);
+    if (!SendCmd(CMD_GET_VEHICLE_VAR, payload)) return 0.0;
+    auto resp = RecvResponse();
+    if (resp.empty()) return 0.0;
+
+    for (const auto& cmd : ParseCommands(resp)) {
+        if (cmd.id != RESP_GET_VEHICLE_VAR || cmd.data.empty()) continue;
+        try {
+            size_t pos = 0;
+            if (cmd.data[pos++] != varId) continue;
+            GetString(cmd.data, pos);           // echo object ID
+            if (cmd.data[pos++] != TYPE_DOUBLE) continue;
+            return GetDouble(cmd.data, pos);
+        } catch (const std::out_of_range& e) {
+            std::cerr << "SumoClient: malformed double response (var=0x"
+                      << std::hex << static_cast<int>(varId) << ") — " << e.what() << "\n";
+        }
+    }
+    return 0.0;
+}
+
+/**
+ * @brief Generic GET for a variable that returns a single string.
+ *        Sends one request and reads one response.
+ */
+std::string SumoClient::GetStringVar(uint8_t varId, const std::string& vehicleId) {
+    std::vector<uint8_t> payload{ varId };
+    PutString(payload, vehicleId);
+    if (!SendCmd(CMD_GET_VEHICLE_VAR, payload)) return {};
+    auto resp = RecvResponse();
+    if (resp.empty()) return {};
+
+    for (const auto& cmd : ParseCommands(resp)) {
+        if (cmd.id != RESP_GET_VEHICLE_VAR || cmd.data.empty()) continue;
+        try {
+            size_t pos = 0;
+            if (cmd.data[pos++] != varId) continue;
+            GetString(cmd.data, pos);           // echo object ID
+            if (cmd.data[pos++] != TYPE_STRING) continue;
+            return GetString(cmd.data, pos);
+        } catch (const std::out_of_range& e) {
+            std::cerr << "SumoClient: malformed string response (var=0x"
+                      << std::hex << static_cast<int>(varId) << ") — " << e.what() << "\n";
+        }
+    }
+    return {};
+}
+
+// *******************************************************************************************************************
+// Vehicle list queries.
+
 std::vector<std::string> SumoClient::GetVehicleIds() {
     return GetStringListVar(CMD_GET_VEHICLE_VAR, RESP_GET_VEHICLE_VAR, VAR_ID_LIST);
 }
@@ -284,23 +344,27 @@ std::vector<std::string> SumoClient::GetArrivedVehicleIds() {
 }
 
 // *******************************************************************************************************************
+// Vehicle state retrieval — batched.
 
 VehicleState SumoClient::GetVehicleState(const std::string& vid) {
-    // Send both queries back-to-back before reading any reply.
-    // This halves the number of TCP round-trips compared to sequential
-    // request/reply pairs.
+    // Send all queries back-to-back before reading any reply (pipelining).
+    // Variables queried: position (0x42), speed (0x40), angle (0x43),
+    //                    acceleration (0x72), road id (0x50),
+    //                    lane id (0x51), lane position (0x56).
+    const uint8_t vars[] = {
+        VAR_POSITION, VAR_SPEED, VAR_ANGLE,
+        VAR_ACCELERATION, VAR_ROAD_ID, VAR_LANE_ID, VAR_LANE_POS
+    };
+    constexpr int N = sizeof(vars) / sizeof(vars[0]);
 
-    std::vector<uint8_t> posPayload{ VAR_POSITION };
-    PutString(posPayload, vid);
-
-    std::vector<uint8_t> spdPayload{ VAR_SPEED };
-    PutString(spdPayload, vid);
-
-    if (!SendCmd(CMD_GET_VEHICLE_VAR, posPayload)) return {};
-    if (!SendCmd(CMD_GET_VEHICLE_VAR, spdPayload)) return {};
+    for (int i = 0; i < N; ++i) {
+        std::vector<uint8_t> p{ vars[i] };
+        PutString(p, vid);
+        if (!SendCmd(CMD_GET_VEHICLE_VAR, p)) return {};
+    }
 
     VehicleState state{};
-    for (int req = 0; req < 2; ++req) {
+    for (int req = 0; req < N; ++req) {
         auto resp = RecvResponse();
         if (resp.empty()) continue;
         for (const auto& cmd : ParseCommands(resp)) {
@@ -308,13 +372,24 @@ VehicleState SumoClient::GetVehicleState(const std::string& vid) {
             try {
                 size_t pos  = 0;
                 uint8_t var = cmd.data[pos++];
-                GetString(cmd.data, pos);               // skip echo object ID
+                GetString(cmd.data, pos);   // echo object ID
                 uint8_t tag = cmd.data[pos++];
+
                 if (var == VAR_POSITION && tag == TYPE_POSITION2D) {
                     state.x = GetDouble(cmd.data, pos);
                     state.y = GetDouble(cmd.data, pos);
                 } else if (var == VAR_SPEED && tag == TYPE_DOUBLE) {
                     state.speed = GetDouble(cmd.data, pos);
+                } else if (var == VAR_ANGLE && tag == TYPE_DOUBLE) {
+                    state.angle = GetDouble(cmd.data, pos);
+                } else if (var == VAR_ACCELERATION && tag == TYPE_DOUBLE) {
+                    state.acceleration = GetDouble(cmd.data, pos);
+                } else if (var == VAR_ROAD_ID && tag == TYPE_STRING) {
+                    state.roadId = GetString(cmd.data, pos);
+                } else if (var == VAR_LANE_ID && tag == TYPE_STRING) {
+                    state.laneId = GetString(cmd.data, pos);
+                } else if (var == VAR_LANE_POS && tag == TYPE_DOUBLE) {
+                    state.lanePosition = GetDouble(cmd.data, pos);
                 }
             } catch (const std::out_of_range& e) {
                 std::cerr << "SumoClient: malformed vehicle-state response — " << e.what() << "\n";
@@ -324,12 +399,74 @@ VehicleState SumoClient::GetVehicleState(const std::string& vid) {
     return state;
 }
 
+// *******************************************************************************************************************
+// Vehicle state retrieval — individual getters (use the shared helpers).
+
+double SumoClient::GetVehicleAngle(const std::string& vid) {
+    return GetDoubleVar(VAR_ANGLE, vid);
+}
+
+double SumoClient::GetVehicleAcceleration(const std::string& vid) {
+    return GetDoubleVar(VAR_ACCELERATION, vid);
+}
+
+std::string SumoClient::GetVehicleRoadId(const std::string& vid) {
+    return GetStringVar(VAR_ROAD_ID, vid);
+}
+
+std::string SumoClient::GetVehicleLaneId(const std::string& vid) {
+    return GetStringVar(VAR_LANE_ID, vid);
+}
+
+double SumoClient::GetVehicleLanePosition(const std::string& vid) {
+    return GetDoubleVar(VAR_LANE_POS, vid);
+}
+
+// *******************************************************************************************************************
+// Vehicle state commands (SET).
+
 bool SumoClient::SetVehicleSpeed(const std::string& vid, double speed) {
     // SET commands require: variable ID, object ID, type tag, value.
     std::vector<uint8_t> payload{ VAR_SPEED };
     PutString(payload, vid);
     payload.push_back(TYPE_DOUBLE);
     PutDouble(payload, speed);
+    if (!SendCmd(CMD_SET_VEHICLE_VAR, payload)) return false;
+    for (const auto& cmd : ParseCommands(RecvResponse())) {
+        if (cmd.id == CMD_SET_VEHICLE_VAR && !cmd.data.empty())
+            return cmd.data[0] == RTYPE_OK;
+    }
+    return false;
+}
+
+bool SumoClient::SetVehicleSlowDown(const std::string& vid, double speed, double duration) {
+    // CMD_SLOWDOWN payload: compound(2), TYPE_DOUBLE speed, TYPE_DOUBLE duration.
+    std::vector<uint8_t> payload{ CMD_SLOWDOWN };
+    PutString(payload, vid);
+    payload.push_back(TYPE_COMPOUND);
+    PutInt32(payload, 2);               // compound size = 2 elements
+    payload.push_back(TYPE_DOUBLE);
+    PutDouble(payload, speed);
+    payload.push_back(TYPE_DOUBLE);
+    PutDouble(payload, duration);
+    if (!SendCmd(CMD_SET_VEHICLE_VAR, payload)) return false;
+    for (const auto& cmd : ParseCommands(RecvResponse())) {
+        if (cmd.id == CMD_SET_VEHICLE_VAR && !cmd.data.empty())
+            return cmd.data[0] == RTYPE_OK;
+    }
+    return false;
+}
+
+
+bool SumoClient::SetVehicleColor(const std::string& vid, const TraCIColor& color) {
+    // VAR_COLOR payload: TYPE_COLOR, r, g, b, a (4 bytes).
+    std::vector<uint8_t> payload{ VAR_COLOR };
+    PutString(payload, vid);
+    payload.push_back(TYPE_COLOR);
+    payload.push_back(color.r);
+    payload.push_back(color.g);
+    payload.push_back(color.b);
+    payload.push_back(color.a);
     if (!SendCmd(CMD_SET_VEHICLE_VAR, payload)) return false;
     for (const auto& cmd : ParseCommands(RecvResponse())) {
         if (cmd.id == CMD_SET_VEHICLE_VAR && !cmd.data.empty())

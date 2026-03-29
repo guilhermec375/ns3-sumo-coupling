@@ -17,6 +17,46 @@ Designed with simplicity at its core, this project demonstrates that robust coup
 * **Automated Mobility:** Vehicle states are retrieved at each step and applied to the corresponding `ns-3` `MobilityModel`, seamlessly integrating with standard radio propagation models.
 * **Bidirectional Control:** User-defined callbacks enable `ns-3` applications to issue commands back to SUMO with minimal overhead.
 
+
+## Vehicle API
+
+All vehicle functions are accessible via `sumoManager->GetClient()` inside the callback.
+
+### GET — State Retrieval
+
+| Function | Returns | TraCI var |
+|---|---|---|
+| `GetVehicleState(vid)` | Full `VehicleState` struct (batched) | — |
+| `GetVehicleAngle(vid)` | `double` — heading in degrees (0=North, clockwise) | `0x43` |
+| `GetVehicleAcceleration(vid)` | `double` — longitudinal acceleration in m/s² | `0x72` |
+| `GetVehicleRoadId(vid)` | `string` — current edge ID | `0x50` |
+| `GetVehicleLaneId(vid)` | `string` — current lane ID | `0x51` |
+| `GetVehicleLanePosition(vid)` | `double` — distance from lane start in meters | `0x56` |
+
+`GetVehicleState()` retrieves all fields in a single pipelined request, minimising TCP round-trips. Use individual getters only when a single field is needed.
+
+The `VehicleState` struct contains:
+```cpp
+struct VehicleState {
+    double x, y;           // position in meters
+    double speed;          // m/s
+    double angle;          // degrees
+    double acceleration;   // m/s²
+    double lanePosition;   // meters from lane start
+    std::string roadId;
+    std::string laneId;
+};
+```
+
+### SET — Vehicle Commands
+
+| Function | Effect | TraCI var |
+|---|---|---|
+| `SetVehicleSpeed(vid, speed)` | Instant speed override. Pass `-1.0` to restore autonomous control. | `0x40` |
+| `SetVehicleSlowDown(vid, speed, duration)` | Linearly reduces speed to `speed` m/s over `duration` seconds. | `0x14` |
+| `SetVehicleColor(vid, color)` | Changes vehicle colour in the SUMO GUI (`TraCIColor{r,g,b,a}`). | `0x45` |
+
+
 ## Installation
 
 Clone the repository into the `contrib/` directory of your `ns-3` installation and reconfigure the build system:
@@ -77,17 +117,26 @@ The repository includes a `simple-vanet` scenario that validates position update
 **Terminal 1 (Start SUMO):**
 ```bash
 sumo -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
+
+# If you prefer the graphical interface, use `sumo-gui` instead:
+sumo-gui -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
 ```
 
 **Terminal 2 (Run ns-3):**
 ```bash
-./ns3 build sumo-coupling && NS_LOG=SumoManager=info ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300
+./ns3 build sumo-coupling && ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300
+
+# If you want to enable detailed logging for debugging, use:
+./ns3 build sumo-coupling && NS_LOG="SumoManager=info:SimpleVanet=info" ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300
 ```
 
 ### Option B: Automated Execution
 
 ```bash
-./ns3 build sumo-coupling && NS_LOG=SumoManager=info ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
+./ns3 build sumo-coupling && ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
+
+# If you want to run the entire scenario with a single command and see detailed logs, use:
+./ns3 build sumo-coupling && NS_LOG="SumoManager=info:SimpleVanet=info" ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
 ```
 
 ## Limitations
