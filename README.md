@@ -23,9 +23,9 @@ Clone the repository into the `contrib/` directory of your `ns-3` installation a
 
 ```bash
 cd <ns3-root>/contrib
-git clone [https://github.com/Balzakrez/ns3-sumo-coupling](https://github.com/Balzakrez/ns3-sumo-coupling)
+git clone https://github.com/Balzakrez/ns3-sumo-coupling
 cd ..
-./ns3 configure
+./ns3 configure --enable-examples --enable-tests
 ./ns3 build
 ```
 
@@ -76,7 +76,7 @@ The repository includes a `simple-vanet` scenario that validates position update
 
 **Terminal 1 (Start SUMO):**
 ```bash
-sumo -c contrib/sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
+sumo -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
 ```
 
 **Terminal 2 (Run ns-3):**
@@ -87,13 +87,14 @@ sumo -c contrib/sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port
 ### Option B: Automated Execution
 
 ```bash
-./ns3 build sumo-coupling && NS_LOG=SumoManager=info ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/sumo-coupling/sumo-scenarios/simple/simple.sumocfg
+./ns3 build sumo-coupling && NS_LOG=SumoManager=info ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
 ```
 
 ## Limitations
 
-* **Polling Overhead:** TraCI subscriptions are currently unimplemented. Position and speed are polled sequentially per step for each vehicle.
+* **Polling Overhead:** TraCI subscriptions are currently unimplemented.
 * **Single Client:** The `CMD_SETORDER` TraCI command is currently unsupported.
+* **Additional features and TraCI commands are planned for future releases.**
 
 ## License
 
