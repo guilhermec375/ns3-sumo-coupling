@@ -48,17 +48,17 @@ static std::ofstream g_logFile;
 // ---------------------------------------------------------------------------
 // Validation counters.
 
-static uint32_t g_positionUpdates  = 0;
-static double   g_sumSpeed         = 0.0;
-static double   g_minX = 1e9,  g_maxX = -1e9;
-static double   g_minY = 1e9,  g_maxY = -1e9;
+static uint32_t g_positionUpdates = 0;
+static double g_sumSpeed = 0.0;
+static double g_minX = 1e9, g_maxX = -1e9;
+static double g_minY = 1e9, g_maxY = -1e9;
 
-static bool g_bidirTested    = false;
-static bool g_angleTested    = false;
-static bool g_roadIdTested   = false;
-static bool g_slowDownSent   = false;
+static bool g_bidirTested = false;
+static bool g_angleTested = false;
+static bool g_roadIdTested = false;
+static bool g_slowDownSent = false;
 static bool g_slowDownTested = false;
-static bool g_colorTested    = false;
+static bool g_colorTested = false;
 
 // Track known vehicles to detect entries.
 static std::set<std::string> g_knownVehicles;
@@ -71,6 +71,12 @@ static void PrintEvent(double t, const std::string& msg) {
               << std::setw(6) << t << "s]  " << msg << "\n";
 }
 
+static void PrintActiveVehicleCount(double t, Ptr<SumoManager> sumoManager, const std::string& label) {
+    const auto active = sumoManager->GetClient().GetVehicleIds();
+    std::cout << "### T=" << std::fixed << std::setprecision(1)
+              << t << "s " << label << " ACTIVE VEHICLES=" << active.size() << " ###\n";
+}
+
 // ---------------------------------------------------------------------------
 // Per-step grouping.
 
@@ -80,7 +86,7 @@ struct VehicleRow {
     std::string roadId, laneId;
 };
 
-static double                  g_lastStep = -1.0;
+static double g_lastStep = -1.0;
 static std::vector<VehicleRow> g_stepRows;
 
 static void FlushStep() {
@@ -107,26 +113,26 @@ static void FlushStep() {
 
 int main(int argc, char* argv[]) {
     std::string sumoConfig = "";
-    std::string sumoHost   = "127.0.0.1";
-    int         sumoPort   = 1337;
-    uint32_t    poolSize   = 10;
-    double      simTime    = 60.0;
-    double      stepSize   = 0.1;
-    bool        useGui     = false;
+    std::string sumoHost = "127.0.0.1";
+    int sumoPort = 1337;
+    uint32_t poolSize = 10;
+    double simTime = 60.0;
+    double stepSize = 0.1;
+    bool useGui = false;
 
     // Default log file: same directory as this source file.
     std::string logFile =
         (std::filesystem::path(__FILE__).parent_path() / "vanet_log.txt").string();
 
     CommandLine cmd(__FILE__);
-    cmd.AddValue("sumoConfig", "Path to .sumocfg file",    sumoConfig);
-    cmd.AddValue("sumoHost",   "TraCI host",               sumoHost);
-    cmd.AddValue("sumoPort",   "TraCI port",               sumoPort);
-    cmd.AddValue("poolSize",   "Node pool size",           poolSize);
-    cmd.AddValue("simTime",    "Simulation duration (s)",  simTime);
-    cmd.AddValue("stepSize",   "Synchronisation step (s)", stepSize);
-    cmd.AddValue("useGui",     "Use sumo-gui",             useGui);
-    cmd.AddValue("logFile",    "Override log file path",   logFile);
+    cmd.AddValue("sumoConfig", "Path to .sumocfg file", sumoConfig);
+    cmd.AddValue("sumoHost", "TraCI host", sumoHost);
+    cmd.AddValue("sumoPort", "TraCI port", sumoPort);
+    cmd.AddValue("poolSize", "Node pool size", poolSize);
+    cmd.AddValue("simTime", "Simulation duration (s)", simTime);
+    cmd.AddValue("stepSize", "Synchronisation step (s)", stepSize);
+    cmd.AddValue("useGui", "Use sumo-gui", useGui);
+    cmd.AddValue("logFile", "Override log file path", logFile);
     cmd.Parse(argc, argv);
 
     // Open log file.
@@ -167,14 +173,27 @@ int main(int argc, char* argv[]) {
     // -----------------------------------------------------------------------
     // SumoManager.
 
-    Ptr<Node>        managerNode = CreateObject<Node>();
+    Ptr<Node> managerNode = CreateObject<Node>();
     Ptr<SumoManager> sumoManager = CreateObject<SumoManager>();
-    sumoManager->SetAttribute("Host",       StringValue(sumoHost));
-    sumoManager->SetAttribute("Port",       IntegerValue(sumoPort));
-    sumoManager->SetAttribute("StepSize",   DoubleValue(stepSize));
+    sumoManager->SetAttribute("Host", StringValue(sumoHost));
+    sumoManager->SetAttribute("Port", IntegerValue(sumoPort));
+    sumoManager->SetAttribute("StepSize", DoubleValue(stepSize));
     sumoManager->SetAttribute("SumoConfig", StringValue(sumoConfig));
-    sumoManager->SetAttribute("UseGui",     BooleanValue(useGui));
+    sumoManager->SetAttribute("UseGui", BooleanValue(useGui));
     sumoManager->SetNodePool(pool);
+
+    // Print active vehicles at start, every 10s, and at final simulation time.
+    Simulator::Schedule(Seconds(0.0), [sumoManager]() {
+        PrintActiveVehicleCount(Simulator::Now().GetSeconds(), sumoManager, "INITIAL:");
+    });
+    for (double t = 10.0; t < simTime; t += 10.0) {
+        Simulator::Schedule(Seconds(t), [sumoManager]() {
+            PrintActiveVehicleCount(Simulator::Now().GetSeconds(), sumoManager, "PERIODIC:");
+        });
+    }
+    Simulator::Schedule(Seconds(simTime), [sumoManager]() {
+        PrintActiveVehicleCount(Simulator::Now().GetSeconds(), sumoManager, "FINAL:");
+    });
 
     std::cout << "  Connecting to SUMO...\n\n";
     std::cout << "  --- Simulation events ---\n";
@@ -208,8 +227,8 @@ int main(int argc, char* argv[]) {
 
             // Test 4: instant speed override.
             if (!g_bidirTested && s.speed > 3.0) {
-                g_bidirTested = true;
                 bool ok = sumoManager->GetClient().SetVehicleSpeed(vid, 2.0);
+                g_bidirTested = ok;
                 PrintEvent(t, "SetVehicleSpeed(" + vid + ", 2.0 m/s) -> " + (ok ? "OK" : "FAILED"));
             }
 
@@ -230,18 +249,17 @@ int main(int argc, char* argv[]) {
 
             // Test 7: gradual SlowDown.
             if (!g_slowDownSent && s.speed > 5.0) {
-                g_slowDownSent   = true;
-                g_slowDownTested = true;
+                g_slowDownSent = true;
                 bool ok = sumoManager->GetClient().SetVehicleSlowDown(vid, 1.0, 3.0);
+                g_slowDownTested = ok;
                 PrintEvent(t, "SetVehicleSlowDown(" + vid + ", 1.0 m/s, 3.0 s) -> " + (ok ? "OK" : "FAILED"));
             }
 
-
             // Test 8: color.
             if (!g_colorTested && s.speed > 8.0) {
-                g_colorTested = true;
                 TraCIColor red{255, 0, 0, 255};
                 bool ok = sumoManager->GetClient().SetVehicleColor(vid, red);
+                g_colorTested = ok;
                 PrintEvent(t, "SetVehicleColor(" + vid + ", red) -> " + (ok ? "OK" : "FAILED"));
             }
         });
@@ -262,17 +280,18 @@ int main(int argc, char* argv[]) {
     // -----------------------------------------------------------------------
     // Validation report.
 
-    bool   t1  = (g_positionUpdates >= 100);
-    bool   t2  = (g_minX >= -10 && g_maxX <= 410 && g_minY >= -10 && g_maxY <= 410);
+    bool t1 = (g_positionUpdates >= 100);
+    bool t2 = (g_minX >= -10 && g_maxX <= 410 && g_minY >= -10 && g_maxY <= 410);
     double avg = g_positionUpdates > 0 ? g_sumSpeed / g_positionUpdates : 0.0;
-    bool   t3  = (avg > 1.0 && avg <= 14.0);
-    bool   t4  = g_bidirTested;
-    bool   t5  = g_angleTested;
-    bool   t6  = g_roadIdTested;
-    bool   t7  = g_slowDownTested;
-    bool   t8  = g_colorTested;
+    bool t3 = (avg > 1.0 && avg <= 14.0);
+    bool t4 = g_bidirTested;
+    bool t5 = g_angleTested;
+    bool t6 = g_roadIdTested;
+    bool t7 = g_slowDownTested;
+    bool t8 = g_colorTested;
 
     std::cout << "\n  --- Test report ---\n\n";
+    std::cout << "  Vehicles seen      : " << g_knownVehicles.size() << "\n";
     std::cout << "  1. Position updates : " << g_positionUpdates << " [" << (t1 ? "OK" : "FAIL") << "]\n";
     std::cout << "  2. Coordinates in SUMO area [" << (t2 ? "OK" : "FAIL") << "]\n";
     std::cout << "  3. Average speed    : " << std::fixed << std::setprecision(2) << avg << " m/s [" << (t3 ? "OK" : "FAIL") << "]\n";

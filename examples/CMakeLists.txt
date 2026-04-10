@@ -10,3 +10,13 @@ build_lib_example(
     ${libapplications}
     ${libwifi}
 )
+
+build_lib_example(
+  NAME minimal-vanet
+  SOURCE_FILES minimal-vanet.cc
+  LIBRARIES_TO_LINK
+    ${libsumo-coupling}
+    ${libcore}
+    ${libnetwork}
+    ${libmobility}
+)

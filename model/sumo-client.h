@@ -1,29 +1,41 @@
-#ifndef SUMO_CLIENT_H
-#define SUMO_CLIENT_H
+#pragma once
+// #pragma once: include this file only once per translation unit.
+// Replaces the classical #ifndef / #define / #endif include-guard macros,
+// which require a manually chosen unique name and are error-prone.
 
-#include <cstdint>
-#include <string>
-#include <vector>
+// Standard library headers — only what is actually needed in the interface.
+#include <cstdint> // uint8_t, int32_t, uint64_t — fixed-width integers
+#include <string> // std::string
+#include <string_view> // std::string_view — non-owning string reference, no allocation
+#include <vector> // std::vector<T> — dynamic byte buffer
+#include <utility>
 
 namespace ns3 {
 
-/**
- * @brief State of a SUMO vehicle, filled by GetVehicleState().
- */
+// ---------------------------------------------------------------------------
+// VehicleState
+//
+// Plain data aggregate filled by SumoClient::GetVehicleState().
+// All numeric fields are default-initialised to 0.0 so that a
+// default-constructed VehicleState{} is always safe to read.
+// ---------------------------------------------------------------------------
 struct VehicleState {
-    double x            = 0.0; ///< X coordinate in meters (SUMO Cartesian system).
-    double y            = 0.0; ///< Y coordinate in meters.
-    double speed        = 0.0; ///< Scalar speed in m/s.
-    double angle        = 0.0; ///< Heading angle in degrees (0 = North, clockwise).
-    double acceleration = 0.0; ///< Longitudinal acceleration in m/s^2.
-    std::string roadId;        ///< ID of the edge the vehicle is currently on.
-    std::string laneId;        ///< ID of the lane the vehicle is currently on.
-    double lanePosition = 0.0; ///< Distance from the start of the lane in meters.
+    double x = 0.0; // Cartesian X coordinate in metres (SUMO system).
+    double y = 0.0; // Cartesian Y coordinate in metres.
+    double speed = 0.0; // Scalar speed in m/s.
+    double angle = 0.0; // Heading angle in degrees (0 = North, clockwise).
+    double acceleration = 0.0; // Longitudinal acceleration in m/s².
+    std::string roadId; // Current edge (road) ID — empty on error.
+    std::string laneId; // Current lane ID — empty on error.
+    double lanePosition = 0.0; // Distance from lane start to front bumper in metres.
 };
 
-/**
- * @brief RGBA color used by SetVehicleColor().
- */
+// ---------------------------------------------------------------------------
+// TraCIColor
+//
+// RGBA colour sent to SUMO via SetVehicleColor().
+// Default: yellow (255, 255, 0) fully opaque (alpha = 255).
+// ---------------------------------------------------------------------------
 struct TraCIColor {
     uint8_t r = 255;
     uint8_t g = 255;
@@ -31,226 +43,251 @@ struct TraCIColor {
     uint8_t a = 255;
 };
 
-/**
- * @brief Minimal TraCI client for ns-3/SUMO co-simulation.
- *
- * Implements the binary TraCI protocol over a TCP socket.
- * Has no dependency on SUMO source files.
- * Compatible with SUMO 1.8 and later.
- */
+// ---------------------------------------------------------------------------
+// SumoClient
+//
+// Minimal TraCI binary-protocol client for ns-3/SUMO co-simulation.
+// Speaks the TraCI protocol over a raw TCP socket with no dependency on
+// any SUMO source files. Compatible with SUMO 1.8 and later.
+//
+// Ownership model: non-copyable (a socket cannot be shared between two
+// owners), not declared moveable (the object always lives as a member of
+// SumoManager for the entire simulation run).
+// ---------------------------------------------------------------------------
 class SumoClient {
 public:
     SumoClient();
-    ~SumoClient();
+    ~SumoClient(); // sends CMD_CLOSE to SUMO and closes the socket
 
-    // Non-copyable.
-    SumoClient(const SumoClient&)            = delete;
+    // Copying is disabled: two SumoClient objects must never share the same
+    // file descriptor — the second destructor would call ::close() on an fd
+    // already closed, causing undefined behaviour.
+    SumoClient(const SumoClient&) = delete;
     SumoClient& operator=(const SumoClient&) = delete;
 
     // -----------------------------------------------------------------------
-    // Connection management.
+    // Connection management
+    // -----------------------------------------------------------------------
 
-    /**
-     * @brief Open a TCP connection to SUMO and perform the TraCI handshake.
-     * @param host SUMO hostname or IP address.
-     * @param port TraCI server port.
-     * @return true on success.
-     */
+    // Connect to SUMO and perform the TraCI version handshake.
+    // Takes const std::string& instead of string_view because getaddrinfo()
+    // internally requires a null-terminated C-string via .c_str().
     bool Connect(const std::string& host, int port);
 
-    /**
-     * @brief Send CMD_CLOSE to SUMO and close the socket.
-     */
+    // Send CMD_CLOSE, read the acknowledgement, then close the socket.
+    // Safe to call on an already-closed client.
     void Close();
 
-    /**
-     * @brief Check whether the socket is open.
-     * @return true if connected.
-     */
-    bool IsConnected() const { return m_socket >= 0; }
+    // Returns true when the underlying socket file descriptor is open.
+    bool IsConnected() const { return m_socket.valid(); }
 
     // -----------------------------------------------------------------------
-    // Simulation control.
+    // Simulation control
+    // -----------------------------------------------------------------------
 
-    /**
-     * @brief Advance the SUMO simulation to targetTime.
-     * @param targetTime Target simulation time in seconds.
-     * @return true if SUMO acknowledged the step successfully.
-     */
+    // Advance the SUMO simulation to targetTime (seconds).
+    // [[nodiscard]]: ignoring the return value silently skips error handling
+    // and leaves ns-3 and SUMO out of sync.
     bool SimStep(double targetTime);
 
-    /**
-     * @brief Return the IDs of all active vehicles in SUMO.
-     * @return Vector of vehicle ID strings.
-     */
+    // IDs of all vehicles currently active in SUMO.
     std::vector<std::string> GetVehicleIds();
 
-    /**
-     * @brief Return the IDs of vehicles that entered the simulation in the last step.
-     * @return Vector of vehicle ID strings.
-     */
+    // IDs of vehicles that entered the simulation during the last step.
     std::vector<std::string> GetDepartedVehicleIds();
 
-    /**
-     * @brief Return the IDs of vehicles that left the simulation in the last step.
-     *
-     * Prefer this over GetVehicleIds() + set-difference: no extra round-trip.
-     * Note: does NOT cover vehicles removed via teleporting or rerouting failures;
-     * use GetVehicleIds() for authoritative reconciliation.
-     */
+    // IDs of vehicles that completed their route during the last step.
+    // Does NOT cover teleportation or rerouting failures — use GetVehicleIds()
+    // for authoritative reconciliation.
     std::vector<std::string> GetArrivedVehicleIds();
 
     // -----------------------------------------------------------------------
-    // Vehicle state retrieval (GET).
+    // Vehicle state retrieval (GET)
+    // -----------------------------------------------------------------------
 
-    /**
-     * @brief Return the full vehicle state in a single batched request.
-     *
-     * Sends all variable queries back-to-back before reading any reply,
-     * minimising TCP round-trips. Fills: x, y, speed, angle, acceleration,
-     * roadId, laneId, lanePosition.
-     *
-     * @param vehicleId SUMO vehicle ID.
-     * @return Fully populated VehicleState. All fields are zero/empty on error.
-     */
-    VehicleState GetVehicleState(const std::string& vehicleId);
+    // Retrieve the full vehicle state in a single pipelined request.
+    // All 7 variable queries are sent back-to-back before any reply is read,
+    // reducing 7 TCP round-trips to 1. Returns a zero/empty VehicleState on error.
+    // std::string_view: the ID is forwarded only to PutString(); no .c_str() needed.
+    VehicleState GetVehicleState(std::string_view vehicleId);
 
-    /** @return Heading angle of the vehicle in degrees (0 = North, clockwise). */
-    double GetVehicleAngle(const std::string& vehicleId);
-
-    /** @return Longitudinal acceleration of the vehicle in m/s^2. */
-    double GetVehicleAcceleration(const std::string& vehicleId);
-
-    /** @return ID of the road (edge) the vehicle is currently on. */
-    std::string GetVehicleRoadId(const std::string& vehicleId);
-
-    /** @return ID of the lane the vehicle is currently on. */
-    std::string GetVehicleLaneId(const std::string& vehicleId);
-
-    /**
-     * @return Distance from the start of the current lane to the vehicle's
-     *         front bumper in meters.
-     */
-    double GetVehicleLanePosition(const std::string& vehicleId);
+    double GetVehicleAngle(std::string_view vehicleId);
+    double GetVehicleAcceleration(std::string_view vehicleId);
+    std::string GetVehicleRoadId(std::string_view vehicleId);
+    std::string GetVehicleLaneId(std::string_view vehicleId);
+    double GetVehicleLanePosition(std::string_view vehicleId);
 
     // -----------------------------------------------------------------------
-    // Vehicle state commands (SET, ns-3 -> SUMO).
+    // Vehicle control (SET, ns-3 → SUMO)
+    // -----------------------------------------------------------------------
 
-    /**
-     * @brief Override the speed of a vehicle instantly.
-     * @param vehicleId SUMO vehicle ID.
-     * @param speed     Target speed in m/s. Pass -1.0 to restore autonomous control.
-     * @return true if SUMO acknowledged the command.
-     */
-    bool SetVehicleSpeed(const std::string& vehicleId, double speed);
+    // Instantly override the vehicle speed.
+    // Pass -1.0 to restore autonomous SUMO control.
+    bool SetVehicleSpeed(std::string_view vehicleId, double speed);
 
-    /**
-     * @brief Gradually reduce the vehicle speed to the given value.
-     *
-     * Implements CMD_SLOWDOWN (0x14): SUMO linearly interpolates the speed
-     * reduction over the specified duration, which is more realistic than an
-     * instant override.
-     *
-     * @param vehicleId SUMO vehicle ID.
-     * @param speed     Target speed in m/s.
-     * @param duration  Time in seconds to reach the target speed.
-     * @return true if SUMO acknowledged the command.
-     */
-    bool SetVehicleSlowDown(const std::string& vehicleId, double speed, double duration);
+    // Gradually reduce speed to `speed` m/s over `duration` seconds (CMD_SLOWDOWN).
+    // More realistic than SetVehicleSpeed: SUMO linearly interpolates the deceleration.
+    bool SetVehicleSlowDown(std::string_view vehicleId, double speed, double duration);
 
-    /**
-     * @brief Change the colour of a vehicle in the SUMO GUI.
-     *
-     * Useful for visualising vehicle state (e.g. highlight vehicles that
-     * received a message, or those above a speed threshold).
-     *
-     * @param vehicleId SUMO vehicle ID.
-     * @param color     RGBA colour. Default yellow (255, 255, 0, 255).
-     * @return true if SUMO acknowledged the command.
-     */
-    bool SetVehicleColor(const std::string& vehicleId, const TraCIColor& color);
+    // Change the SUMO-GUI colour of a vehicle (useful for visualising state).
+    bool SetVehicleColor(std::string_view vehicleId, const TraCIColor& color);
 
 private:
 
-    int m_socket; ///< TCP socket file descriptor. -1 when not connected.
+    // -----------------------------------------------------------------------
+    // Socket — RAII wrapper for a POSIX file descriptor
+    //
+    // Guarantees ::close() is called exactly once regardless of exceptions
+    // or early returns. Move-only: ownership transfers cleanly from a local
+    // Socket (created in Connect) to the member m_socket.
+    // -----------------------------------------------------------------------
+    class Socket {
+    public:
+        // Default-constructed socket is in the "invalid / not open" state.
+        Socket() noexcept = default;
 
-    /// Internal representation of a single TraCI command parsed from a response.
-    struct TraCICmd {
-        uint8_t id;
-        std::vector<uint8_t> data;
+        // Adopt an existing file descriptor; explicit prevents accidental
+        // implicit conversion from a plain int.
+        explicit Socket(int fd) noexcept : m_fd{fd} {}
+
+        // Destructor guarantees ::close() is called if the fd is valid.
+        ~Socket() noexcept { reset(); }
+
+        // Move constructor: transfer ownership. std::exchange atomically reads
+        // o.m_fd and replaces it with k_invalid, so only one object will ever
+        // call ::close() on the descriptor.
+        Socket(Socket&& o) noexcept : m_fd{std::exchange(o.m_fd, k_invalid)} {}
+
+        // Move assignment: close any fd we currently own, then steal from o.
+        // The self-assignment guard (this != &o) prevents reset() from closing
+        // the fd before we can read it from o.
+        Socket& operator=(Socket&& o) noexcept {
+            if (this != &o) { reset(); m_fd = std::exchange(o.m_fd, k_invalid); }
+            return *this;
+        }
+
+        // Copying a file descriptor would create two owners: both destructors
+        // would call ::close(), and the second call is undefined behaviour.
+        Socket(const Socket&) = delete;
+        Socket& operator=(const Socket&) = delete;
+
+        // Close the fd and mark the socket invalid. Defined in the .cc file
+        // to keep ::close() (from <unistd.h>) out of this header.
+        void reset() noexcept;
+
+        int fd() const noexcept { return m_fd; }
+        bool valid() const noexcept { return m_fd != k_invalid; }
+
+    private:
+        static constexpr int k_invalid = -1; // POSIX sentinel for "no fd"
+        int m_fd{k_invalid};
     };
 
     // -----------------------------------------------------------------------
-    // TraCI protocol constants.
-    // Source: https://sumo.dlr.de/docs/TraCI/Protocol.html
+    // TraCICmd — internal representation of one parsed TraCI command
+    // -----------------------------------------------------------------------
+    struct TraCICmd {
+        uint8_t id{}; // command / response code
+        std::vector<uint8_t> data; // payload bytes (excludes the id byte)
+    };
 
-    // Commands sent by ns-3 to SUMO.
-    static constexpr uint8_t CMD_GETVERSION      = 0x00;
-    static constexpr uint8_t CMD_SIMSTEP         = 0x02;
-    static constexpr uint8_t CMD_CLOSE           = 0x7F;
-    static constexpr uint8_t CMD_GET_VEHICLE_VAR = 0xa4;
-    static constexpr uint8_t CMD_SET_VEHICLE_VAR = 0xc4;
-    static constexpr uint8_t CMD_GET_SIM_VAR     = 0xab;
+    // -----------------------------------------------------------------------
+    // TraCI protocol constants
+    // Reference: https://sumo.dlr.de/docs/TraCI/Protocol.html
+    // -----------------------------------------------------------------------
 
-    // Responses: command ID + 0x10.
+    // Commands sent by the client (ns-3 → SUMO).
+    static constexpr uint8_t CMD_GETVERSION = 0x00; // version handshake
+    static constexpr uint8_t CMD_SIMSTEP = 0x02; // advance simulation
+    static constexpr uint8_t CMD_CLOSE = 0x7F; // end session
+    static constexpr uint8_t CMD_GET_VEHICLE_VAR = 0xa4; // read vehicle variable
+    static constexpr uint8_t CMD_SET_VEHICLE_VAR = 0xc4; // write vehicle variable
+    static constexpr uint8_t CMD_GET_SIM_VAR = 0xab; // read simulation variable
+
+    // Response codes: each response ID = command ID | 0x10.
     static constexpr uint8_t RESP_GET_VEHICLE_VAR = 0xb4;
-    static constexpr uint8_t RESP_GET_SIM_VAR     = 0xbb;
+    static constexpr uint8_t RESP_GET_SIM_VAR = 0xbb;
 
-    // GET vehicle variable IDs.
-    static constexpr uint8_t VAR_ID_LIST      = 0x00;
-    static constexpr uint8_t VAR_SPEED        = 0x40;
-    static constexpr uint8_t VAR_POSITION     = 0x42;
-    static constexpr uint8_t VAR_ANGLE        = 0x43;
-    static constexpr uint8_t VAR_ROAD_ID      = 0x50;
-    static constexpr uint8_t VAR_LANE_ID      = 0x51;
-    static constexpr uint8_t VAR_LANE_POS     = 0x56;
+    // GET variable IDs — which property to query.
+    static constexpr uint8_t VAR_ID_LIST = 0x00; // list of all active IDs
+    static constexpr uint8_t VAR_SPEED = 0x40;
+    static constexpr uint8_t VAR_POSITION = 0x42; // 2D Cartesian position
+    static constexpr uint8_t VAR_ANGLE = 0x43;
+    static constexpr uint8_t VAR_ROAD_ID = 0x50;
+    static constexpr uint8_t VAR_LANE_ID = 0x51;
+    static constexpr uint8_t VAR_LANE_POS = 0x56;
     static constexpr uint8_t VAR_ACCELERATION = 0x72;
 
-    // SET vehicle variable / command IDs.
-    static constexpr uint8_t VAR_COLOR        = 0x45; ///< set color (RGBA)
-    static constexpr uint8_t CMD_SLOWDOWN     = 0x14; ///< gradual speed reduction
+    // SET variable / sub-command IDs.
+    static constexpr uint8_t VAR_COLOR = 0x45; // set vehicle colour (RGBA)
+    static constexpr uint8_t CMD_SLOWDOWN = 0x14; // gradual speed reduction
 
-    // Simulation variable IDs.
-    static constexpr uint8_t VAR_DEPARTED_IDS = 0x74;
-    static constexpr uint8_t VAR_ARRIVED_IDS  = 0x79;
+    // Simulation-level variable IDs (used with CMD_GET_SIM_VAR).
+    static constexpr uint8_t VAR_DEPARTED_IDS = 0x74; // vehicles that entered this step
+    static constexpr uint8_t VAR_ARRIVED_IDS = 0x79; // vehicles that left this step
 
-    // Data type tags used in payloads.
-    static constexpr uint8_t TYPE_DOUBLE      = 0x0b;
-    static constexpr uint8_t TYPE_STRINGLIST  = 0x0e;
-    static constexpr uint8_t TYPE_POSITION2D  = 0x01;
-    static constexpr uint8_t TYPE_STRING      = 0x0c;
-    static constexpr uint8_t TYPE_COLOR       = 0x11;
-    static constexpr uint8_t TYPE_COMPOUND    = 0x0f;
+    // Payload type tags — declare the data type of the following bytes.
+    static constexpr uint8_t TYPE_DOUBLE = 0x0b;
+    static constexpr uint8_t TYPE_STRINGLIST = 0x0e;
+    static constexpr uint8_t TYPE_POSITION2D = 0x01;
+    static constexpr uint8_t TYPE_STRING = 0x0c;
+    static constexpr uint8_t TYPE_COLOR = 0x11;
+    static constexpr uint8_t TYPE_COMPOUND = 0x0f; // heterogeneous container
 
-    // Status code returned by SUMO on success.
+    // Status code returned by SUMO in every acknowledgement response.
     static constexpr uint8_t RTYPE_OK = 0x00;
 
     // -----------------------------------------------------------------------
-    // Transport layer.
+    // Transport layer — signatures unchanged from the original
+    // -----------------------------------------------------------------------
+
+    // Build the TraCI framing (short or extended form) and send over TCP.
     bool SendCmd(uint8_t cmdId, const std::vector<uint8_t>& payload);
+
+    // Read one complete TraCI response message (header + body).
+    // Returns an empty vector on connection error.
     std::vector<uint8_t> RecvResponse();
+
+    // Split a raw response buffer into individual TraCI commands.
+    // Static: takes no state from the object, pure transformation.
     static std::vector<TraCICmd> ParseCommands(const std::vector<uint8_t>& buf);
 
+    // Low-level helpers: loop until all bytes are sent / received because
+    // a single send()/recv() call may transfer fewer bytes than requested.
     bool SendBytes(const void* buf, size_t len);
     bool RecvBytes(void* buf, size_t len);
 
     // -----------------------------------------------------------------------
-    // Serializers / deserializers.
+    // Serialisers — append C++ values to a byte buffer in big-endian order
+    // -----------------------------------------------------------------------
     static void PutInt32(std::vector<uint8_t>& b, int32_t v);
     static void PutDouble(std::vector<uint8_t>& b, double v);
-    static void PutString(std::vector<uint8_t>& b, const std::string& s);
+    // string_view accepted here: PutString only iterates, never calls .c_str().
+    static void PutString(std::vector<uint8_t>& b, std::string_view s);
 
-    static int32_t     GetInt32 (const std::vector<uint8_t>& b, size_t& pos);
-    static double      GetDouble(const std::vector<uint8_t>& b, size_t& pos);
+    // -----------------------------------------------------------------------
+    // Deserialisers — read C++ values from a buffer, advancing `pos` each time.
+    // Throw std::out_of_range on buffer underflow so callers catch one type.
+    // -----------------------------------------------------------------------
+    static int32_t GetInt32(const std::vector<uint8_t>& b, size_t& pos);
+    static double GetDouble(const std::vector<uint8_t>& b, size_t& pos);
     static std::string GetString(const std::vector<uint8_t>& b, size_t& pos);
 
     // -----------------------------------------------------------------------
-    // Shared helpers — avoid boilerplate in individual getters.
+    // Shared helpers — reduce repetition across individual getters
+    // -----------------------------------------------------------------------
+
+    // Generic list-of-strings GET: used by GetVehicleIds, GetDeparted/ArrivedIds.
     std::vector<std::string> GetStringListVar(uint8_t domain, uint8_t respId, uint8_t varId);
-    double      GetDoubleVar (uint8_t varId, const std::string& vehicleId);
-    std::string GetStringVar (uint8_t varId, const std::string& vehicleId);
+
+    // Generic single-value GET helpers; string_view forwarded only to PutString.
+    double GetDoubleVar(uint8_t varId, std::string_view vehicleId);
+    std::string GetStringVar(uint8_t varId, std::string_view vehicleId);
+
+    // -----------------------------------------------------------------------
+    // Data members
+    // -----------------------------------------------------------------------
+    Socket m_socket; // RAII-managed TCP socket; default-constructed = invalid
 };
 
 } // namespace ns3
-
-#endif // SUMO_CLIENT_H

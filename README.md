@@ -1,12 +1,35 @@
 # ns3-sumo-coupling
 
-A radically minimalist, zero-dependency `ns-3` contrib module for bidirectional co-simulation with SUMO via TraCI. 
+A radically minimalist, zero-dependency `ns-3` contrib module for bidirectional co-simulation with SUMO via TraCI.
 
-Designed with simplicity at its core, this project demonstrates that robust coupling can be achieved with a remarkably small codebase. It eschews complex middleware and avoids any SUMO source dependencies, making it highly accessible for study, education, and rapid experimentation.
+This project focuses on one goal: make ns-3/SUMO coupling easy to understand, easy to run, and easy to extend. The codebase stays intentionally compact, avoids middleware layers, and does not depend on SUMO source internals.
 
 **Compatibility:** The module is broadly compatible with older versions of both simulators (such as SUMO 1.8 and earlier ns-3 releases). It has been thoroughly tested and validated on **ns-3.47** and **SUMO 1.26**.
 
-*Disclaimer: This module is intended as an educational toy project and a foundation for study, rather than a production-ready solution.*
+
+## Highlights
+
+* Lean architecture: direct TraCI client with deterministic leader-follower stepping.
+* No SUMO source dependency: simple setup and lower maintenance burden.
+* Practical examples included: `minimal-vanet` for smoke tests, `simple-vanet` for validation.
+* Bidirectional integration: read state from SUMO and issue control commands back.
+
+## 30-Second Start
+
+If you already have `ns-3` and SUMO installed, this is the fastest path:
+
+```bash
+# Terminal 1
+sumo -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
+
+# Terminal 2 (from ns-3 root)
+./ns3 build sumo-coupling
+./ns3 run minimal-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=20
+```
+
+This runs the minimal coupling example with compact output and periodic active-vehicle counters.
+
+If this is your first run, prefer `minimal-vanet` first, then move to `simple-vanet`.
 
 ## Architecture Overview
 
@@ -59,6 +82,12 @@ struct VehicleState {
 
 ## Installation
 
+### Prerequisites
+
+* `ns-3` with CMake workflow (`./ns3` helper script available)
+* SUMO available in `PATH` (`sumo` or `sumo-gui`)
+* This repository cloned into `contrib/ns3-sumo-coupling`
+
 Clone the repository into the `contrib/` directory of your `ns-3` installation and reconfigure the build system:
 
 ```bash
@@ -108,9 +137,51 @@ Simulator::Run();
 Simulator::Destroy();
 ```
 
-## Validation Example
+For an even smaller runnable example, see [contrib/ns3-sumo-coupling/examples/minimal-vanet.cc](contrib/ns3-sumo-coupling/examples/minimal-vanet.cc).
 
-The repository includes a `simple-vanet` scenario that validates position updates, coordinate bounding, average speed measurements, and bidirectional commands.
+## Examples
+
+The repository includes:
+
+* `minimal-vanet` ([contrib/ns3-sumo-coupling/examples/minimal-vanet.cc](contrib/ns3-sumo-coupling/examples/minimal-vanet.cc)): ultra-minimal coupling example with compact runtime output (one line per vehicle per second, plus active-vehicle counters at start/every 10 s/end).
+* `simple-vanet` ([contrib/ns3-sumo-coupling/examples/simple-vanet.cc](contrib/ns3-sumo-coupling/examples/simple-vanet.cc)): full validation scenario (position updates, coordinate bounds, average speed, and bidirectional commands).
+
+### Which example should I run?
+
+| Example | Best for | Runtime output | Typical duration |
+|---|---|---|---|
+| `minimal-vanet` | First smoke test and quick integration checks | Very compact + periodic active-vehicle counters | 20 s |
+| `simple-vanet` | Functional validation and API behavior checks | Detailed event/report output + active-vehicle counters (start/10s/final) | 300 s |
+
+`simple-vanet` reports command tests (`SetVehicleSpeed`, `SetVehicleSlowDown`, `SetVehicleColor`) as `OK` only when the corresponding TraCI command succeeds.
+
+### What success looks like
+
+Use this quick checklist after running:
+
+* `minimal-vanet`: you see telemetry lines (`[t=...] veh...`) and counter lines (`### T=... ACTIVE VEHICLES=... ###`).
+* `minimal-vanet`: final counter can be `0` even before `simTime` if scenario traffic ends early.
+* `simple-vanet`: final report shows most or all tests as `OK` and prints `Result: X/8`.
+
+### Minimal example output format
+
+`minimal-vanet` prints two kinds of lines:
+
+* Active vehicle counters: `### T=0.0s INITIAL: ACTIVE VEHICLES=<N> ###`, `### T=10.0s PERIODIC: ACTIVE VEHICLES=<N> ###`, `### T=<simTime>s FINAL: ACTIVE VEHICLES=<N> ###`
+* Vehicle telemetry (max one line per second for each vehicle): `[t=12.1s] veh0 x=198.4 y=273.2 v=13.9`
+
+When scenario traffic ends before `simTime`, telemetry lines stop, while periodic/final counters still print and can reach `0`.
+
+Example snippet:
+
+```text
+### T=0.0s INITIAL: ACTIVE VEHICLES=0 ###
+[t=0.1s] veh0 x=198.4 y=394.9 v=0.0
+[t=1.1s] veh0 x=198.4 y=393.6 v=2.3
+### T=10.0s PERIODIC: ACTIVE VEHICLES=1 ###
+[t=32.0s] veh1 x=201.6 y=351.7 v=13.0
+### T=60.0s FINAL: ACTIVE VEHICLES=0 ###
+```
 
 ### Option A: Manual SUMO Execution
 
@@ -126,6 +197,9 @@ sumo-gui -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --rem
 ```bash
 ./ns3 build sumo-coupling && ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300
 
+# Minimal example:
+./ns3 build sumo-coupling && ./ns3 run minimal-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=20
+
 # If you want to enable detailed logging for debugging, use:
 ./ns3 build sumo-coupling && NS_LOG="SumoManager=info:SimpleVanet=info" ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300
 ```
@@ -133,11 +207,21 @@ sumo-gui -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --rem
 ### Option B: Automated Execution
 
 ```bash
+# Full validation example (single command):
 ./ns3 build sumo-coupling && ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
 
-# If you want to run the entire scenario with a single command and see detailed logs, use:
+# Minimal example (with explicit SUMO config):
+./ns3 build sumo-coupling && ./ns3 run minimal-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=20 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
+
+# Full validation example with NS_LOG enabled:
 ./ns3 build sumo-coupling && NS_LOG="SumoManager=info:SimpleVanet=info" ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
 ```
+
+## Troubleshooting
+
+* **Connection refused on port 1337:** Ensure SUMO is running first with `--remote-port 1337`.
+* **No vehicle updates in ns-3 output:** Check that the `.sumocfg` scenario contains active traffic and simulation time is long enough.
+* **`minimal-vanet` not found:** Re-run `./ns3 configure --enable-examples --enable-tests` then `./ns3 build`.
 
 ## Limitations
 
